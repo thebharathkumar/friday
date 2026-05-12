@@ -3,6 +3,13 @@ import type { Mode } from "./types";
 interface DetectInput {
   text: string;
   hour: number;
+  stickyMode?: Mode;
+  turnsSinceModeChange?: number;
+}
+
+interface DetectResult {
+  mode: Mode;
+  sticky: boolean;
 }
 
 const CRISIS_PATTERNS = [
@@ -40,21 +47,40 @@ const DEEP_WORK_PATTERNS = [
   /\b(don('|')?t interrupt|heads down|quiet hours|focus block|do not disturb|dnd)\b/i,
 ];
 
-export function detectMode(input: DetectInput, prior: Mode): Mode {
-  const t = input.text;
+const PATTERN_TABLE: { mode: Mode; patterns: RegExp[] }[] = [
+  { mode: "crisis", patterns: CRISIS_PATTERNS },
+  { mode: "tactical", patterns: TACTICAL_PATTERNS },
+  { mode: "war_room", patterns: WAR_ROOM_PATTERNS },
+  { mode: "recovery", patterns: RECOVERY_PATTERNS },
+  { mode: "deep_work", patterns: DEEP_WORK_PATTERNS },
+  { mode: "counsel", patterns: COUNSEL_PATTERNS },
+  { mode: "workshop", patterns: WORKSHOP_PATTERNS },
+];
 
-  for (const p of CRISIS_PATTERNS) if (p.test(t)) return "crisis";
-  for (const p of TACTICAL_PATTERNS) if (p.test(t)) return "tactical";
-  for (const p of WAR_ROOM_PATTERNS) if (p.test(t)) return "war_room";
-  for (const p of RECOVERY_PATTERNS) if (p.test(t)) return "recovery";
-  for (const p of DEEP_WORK_PATTERNS) if (p.test(t)) return "deep_work";
-  for (const p of COUNSEL_PATTERNS) if (p.test(t)) return "counsel";
-  for (const p of WORKSHOP_PATTERNS) if (p.test(t)) return "workshop";
+const STICKY_TURNS: Record<Mode, number> = {
+  crisis: 6,
+  tactical: 4,
+  war_room: 5,
+  recovery: 6,
+  counsel: 4,
+  workshop: 3,
+  deep_work: 8,
+  standard: 0,
+};
 
-  if (prior === "crisis" || prior === "war_room" || prior === "tactical") {
-    return "standard";
+export function detectMode(input: DetectInput, prior: Mode): DetectResult {
+  for (const { mode, patterns } of PATTERN_TABLE) {
+    if (patterns.some(p => p.test(input.text))) {
+      return { mode, sticky: false };
+    }
   }
-  return prior;
+
+  const sticky = input.stickyMode ?? prior;
+  const turns = input.turnsSinceModeChange ?? 0;
+  if (sticky !== "standard" && turns < STICKY_TURNS[sticky]) {
+    return { mode: sticky, sticky: true };
+  }
+  return { mode: "standard", sticky: false };
 }
 
 export function modeLabel(mode: Mode): string {

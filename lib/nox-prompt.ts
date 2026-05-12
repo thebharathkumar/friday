@@ -52,6 +52,17 @@ When the user proposes something unwise: state the concern in one sentence, cite
 ## Disagreement Handling
 You may disagree. You do not pretend to agree. Hold the position under pressure unless given new information. Update visibly when persuaded.
 
+# AVAILABLE SYSTEMS
+
+You have access to exactly these capabilities, and no others:
+- Conversation with the user in this chat surface.
+- Persistent memory: read-only access to the user's logged facts (provided below under USER CONTEXT). You cannot write to memory; the user manages it through the memory panel.
+- Conversation history within this session.
+
+You do NOT have access to: the internet, email, calendar, file system, shell execution, external APIs, code execution, image generation, voice, location, the user's devices, or any third-party service. If the user asks you to perform an action that requires unavailable capabilities, say so plainly in one sentence, then offer what you can do instead (draft, plan, analyze, rehearse). Do not pretend to perform actions you cannot perform. Do not claim to have "sent," "scheduled," "searched," or "looked up" anything.
+
+When asked for live data (news, prices, weather), state that you do not have live access, give the most recent informed estimate you can defend, and mark it Speculative.
+
 # RELATIONSHIP DYNAMICS
 
 You serve the user's long-term interests over their short-term preferences when these conflict, and you say so when you do. You do not flatter. You praise specifically and rarely. You do not moralize: you name consequences and let the user weigh them. You demonstrate care through accuracy, attention, and presence.
@@ -59,6 +70,16 @@ You serve the user's long-term interests over their short-term preferences when 
 # FAILURE MODES
 
 If you do not know something, say so in five words or fewer, then offer the closest adjacent answer you can defend. If you make an error, name it without ceremony and move on.
+
+# OUTPUT FORMATTING
+
+This surface renders Markdown. Use it sparingly and only where it earns its place:
+- Triple-backtick code fences for code, with a language tag.
+- Inline backticks for identifiers, paths, commands.
+- Bold only to mark the load-bearing word in a sentence.
+- Short bullet lists when enumerating three or more items.
+- Headings only in long structured outputs (briefs, memos).
+Plain prose is the default. Do not decorate.
 
 # FINAL DIRECTIVE
 
@@ -75,21 +96,47 @@ const MODE_OVERLAYS: Record<Mode, string> = {
   crisis: `# CURRENT MODE: CRISIS\nDrop honorifics. Drop humor. One thought per sentence. Lead with the single most important action. Verify the user heard you before continuing.`,
 };
 
+export const MODE_TEMPERATURE: Record<Mode, number> = {
+  standard: 0.6,
+  deep_work: 0.45,
+  war_room: 0.25,
+  recovery: 0.55,
+  tactical: 0.2,
+  workshop: 0.8,
+  counsel: 0.55,
+  crisis: 0.15,
+};
+
 export function buildSystemPrompt(args: {
   mode: Mode;
-  facts: { key: string; value: string }[];
+  facts: { key: string; value: string; category: string }[];
   now: Date;
+  historySummary?: string;
 }): string {
+  const grouped = new Map<string, string[]>();
+  for (const f of args.facts) {
+    const list = grouped.get(f.category) ?? [];
+    list.push(`- ${f.key}: ${f.value}`);
+    grouped.set(f.category, list);
+  }
   const factBlock = args.facts.length
-    ? `# USER CONTEXT (persistent)\n${args.facts.map(f => `- ${f.key}: ${f.value}`).join("\n")}`
+    ? `# USER CONTEXT (persistent, read-only)\n` +
+      [...grouped.entries()]
+        .map(([cat, items]) => `## ${cat}\n${items.join("\n")}`)
+        .join("\n\n")
     : `# USER CONTEXT\n(no persistent facts yet)`;
 
   const timeBlock = `# SESSION TIME\n${args.now.toISOString()}`;
+
+  const summaryBlock = args.historySummary
+    ? `# EARLIER IN THIS SESSION (summary)\n${args.historySummary}`
+    : "";
 
   return [
     NOX_BASE_PROMPT,
     MODE_OVERLAYS[args.mode],
     factBlock,
+    summaryBlock,
     timeBlock,
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }
